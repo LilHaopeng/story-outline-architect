@@ -1,0 +1,7 @@
+interface:
+  display_name: "小说大纲架构师"
+  short_description: "以六层结构、因果状态与阶段锁定设计并审计可执行小说大纲"
+  default_prompt: "使用 $story-outline-architect 将我的构思逐层扩展为可审计、可版本锁定的小说大纲。"
+
+policy:
+  allow_implicit_invocation: true
