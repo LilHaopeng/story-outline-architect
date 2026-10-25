@@ -21,7 +21,20 @@ FIELD_RE = re.compile(
     r"^\s*[-*]\s+(?:\*\*)?([^：:]+?)(?:\*\*)?\s*[：:]\s*(.*?)\s*$"
 )
 ID_RE = re.compile(r"\b(?:ARC|SEQ|EVT|CH|F|T|LOOP|S|CR)-\d{3}\b", re.IGNORECASE)
-WORLD_ID_RE = re.compile(r"\b(?:RULE|INST|FAC|CON|SEED|WS)-\d{3}\b", re.IGNORECASE)
+WORLD_ID_RE = re.compile(r"(?<![A-Za-z0-9_])(?:RULE|INST|FAC|CON|SEED|WS|REG|CHAR|WLOOP)-\d{3}(?![A-Za-z0-9_-])", re.IGNORECASE)
+WORLD_SOURCE_ID = r"(?:RULE|INST|FAC|CON|SEED|WS|REG|CHAR|LOOP)-\d{3}"
+WORLD_DEFINITION_RES = (
+    re.compile(rf"^ {{0,3}}#{{1,6}}[ \t]+(?:\*\*|`)?({WORLD_SOURCE_ID})(?![\w-])(?:\*\*|`)?(?:[ \t：:]|$)", re.IGNORECASE),
+    re.compile(rf"^\s*(?:[-+*]|\d+[.)])[ \t]+(?:\*\*|`)?({WORLD_SOURCE_ID})(?![\w-])(?:\*\*|`)?[ \t]*[：:]", re.IGNORECASE),
+    re.compile(rf"^\s*\|[ \t]*(?:\*\*|`)?({WORLD_SOURCE_ID})(?:\*\*|`)?[ \t]*\|", re.IGNORECASE),
+)
+BARE_LOOP_RE = re.compile(r"(?<![A-Za-z0-9_])LOOP-\d{3}(?![A-Za-z0-9_-])", re.IGNORECASE)
+FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+CHAPTER_EQUIVALENTS = (
+    ("阻碍与冲突", ("阻碍", "冲突")),
+    ("决策与代价", ("决策", "代价")),
+    ("后果与状态变化", ("后果", "状态变化")),
+)
 PLACEHOLDER_RE = re.compile(
     r"\[(?:待确认|待补充)\]|\b(?:TODO|TBD)\b|\{[^{}\n]{0,80}\}", re.IGNORECASE
 )
@@ -45,7 +58,7 @@ def safe_root(raw: str) -> Path:
 
 def read_text(path: Path, issues: list[Issue], root: Path) -> str:
     try:
-        return path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8-sig")
     except UnicodeDecodeError:
         issues.append(
             Issue("error", "encoding", relative(path, root), "文件不是有效 UTF-8。")
@@ -100,6 +113,115 @@ def add_missing_fields(
     return found
 
 
+def check_chapter_equivalents(
+    path: Path, data: dict[str, str], issues: list[Issue], root: Path, level: str,
+) -> None:
+    for combined, separate in CHAPTER_EQUIVALENTS:
+        if data.get(normalize_label(combined), "").strip():
+            continue
+        if all(data.get(normalize_label(label), "").strip() for label in separate):
+            continue
+        issues.append(Issue(
+            level, "missing_equivalent_fields", relative(path, root),
+            f"填写非空的「{combined}」，或分别填写「{'」「'.join(separate)}」。",
+        ))
+
+
+def canonical_lines(text: str) -> Iterable[tuple[int, str]]:
+    """Ignore illustrative fenced code and comments, retaining source line numbers."""
+    text = re.sub(r"<!--.*?-->", lambda m: "".join("\n" if c == "\n" else " " for c in m.group()), text, flags=re.DOTALL)
+    fence_char = ""
+    fence_size = 0
+    for number, line in enumerate(text.splitlines(), 1):
+        fence = FENCE_RE.match(line)
+        if fence:
+            marker, tail = fence.groups()
+            if not fence_char:
+                fence_char, fence_size = marker[0], len(marker)
+            elif marker[0] == fence_char and len(marker) >= fence_size and not tail.strip():
+                fence_char, fence_size = "", 0
+            continue
+        if not fence_char:
+            yield number, line
+
+
+def defined_world_ids(text: str) -> set[str]:
+    """An ID leads a heading, a colon-delimited list definition, or a table cell."""
+    result: set[str] = set()
+    for _, line in canonical_lines(text):
+        for pattern in WORLD_DEFINITION_RES:
+            match = pattern.match(line)
+            if match:
+                result.add(match.group(1).upper())
+                break
+    return result
+
+
+def outline_files_for_scope(root: Path, scope: str) -> list[Path]:
+    outline = root / "大纲"
+    files = [outline / "世界观引用.md", outline / "00_故事DNA.md"]
+    if SCOPE_ORDER[scope] >= SCOPE_ORDER["architecture"]:
+        files.append(outline / "01_故事架构.md")
+    for layer, folder, pattern in (
+        ("arc", outline / "故事弧", "ARC-*.md"),
+        ("sequence", outline / "剧情段", "SEQ-*.md"),
+        ("chapter", outline, "细纲_第*.md"),
+        ("chapter", outline / "场景", "CH-*-SC-*.md"),
+    ):
+        if SCOPE_ORDER[scope] >= SCOPE_ORDER[layer]:
+            files.extend(sorted(folder.glob(pattern)))
+    return [path for path in files if path.is_file()]
+
+
+def check_world_references(
+    root: Path, scope: str, strict: bool, world_files: list[Path], issues: list[Issue],
+) -> None:
+    known: set[str] = set()
+    for path in world_files:
+        known.update(defined_world_ids(read_text(path, issues, root)))
+    level = "error" if strict else "warning"
+    for path in outline_files_for_scope(root, scope):
+        text = read_text(path, issues, root)
+        reported: set[tuple[str, str]] = set()
+        sections: list[tuple[int, bool]] = []
+        for line_number, line in canonical_lines(text):
+            heading = re.match(r"^ {0,3}(#{1,6})[ \t]+(.+)$", line)
+            if heading:
+                depth = len(heading.group(1))
+                while sections and sections[-1][0] >= depth:
+                    sections.pop()
+                title = normalize_label(heading.group(2))
+                inherited = sections[-1][1] if sections else False
+                sections.append((depth, inherited or any(
+                    token in title for token in ("世界观", "世界规则", "规则漏洞", "套利路径", "worldref")
+                )))
+            field = FIELD_RE.match(line)
+            label = normalize_label(field.group(1)) if field else ""
+            world_context = path.name == "世界观引用.md" or bool(sections and sections[-1][1]) or any(
+                token in label for token in ("世界观", "世界规则", "规则漏洞", "套利路径", "worldref")
+            )
+            if world_context:
+                for match in BARE_LOOP_RE.finditer(line):
+                    object_id = match.group().upper()
+                    key = ("bare_world_loop", object_id)
+                    if key not in reported:
+                        reported.add(key)
+                        issues.append(Issue(
+                            level, key[0], relative(path, root),
+                            f"第 {line_number} 行的世界观漏洞引用 {object_id} 应写为 W{object_id}；裸 LOOP 仅用于故事义务。",
+                        ))
+            for match in WORLD_ID_RE.finditer(line):
+                object_id = match.group().upper()
+                source_id = object_id[1:] if object_id.startswith("WLOOP-") else object_id
+                key = ("invalid_world_reference", object_id)
+                if source_id not in known and key not in reported:
+                    reported.add(key)
+                    issues.append(Issue(
+                        level, key[0], relative(path, root),
+                        f"第 {line_number} 行的世界观引用未找到定义：{object_id}（源 ID：{source_id}）。",
+                    ))
+
+
 def file_id(path: Path, data: dict[str, str], prefix: str) -> str | None:
     value = data.get("id", "")
     match = re.search(rf"\b{prefix}-\d{{3}}\b", value, re.IGNORECASE)
@@ -132,18 +254,7 @@ def discover_scope(root: Path) -> str:
 
 
 def source_files_for_scope(root: Path, scope: str) -> list[Path]:
-    outline = root / "大纲"
-    files: list[Path] = [outline / "工作状态.md", outline / "00_故事DNA.md"]
-    files.append(outline / "世界观引用.md")
-    if SCOPE_ORDER[scope] >= SCOPE_ORDER["architecture"]:
-        files.append(outline / "01_故事架构.md")
-    if SCOPE_ORDER[scope] >= SCOPE_ORDER["arc"]:
-        files.extend(sorted((outline / "故事弧").glob("ARC-*.md")))
-    if SCOPE_ORDER[scope] >= SCOPE_ORDER["sequence"]:
-        files.extend(sorted((outline / "剧情段").glob("SEQ-*.md")))
-    if SCOPE_ORDER[scope] >= SCOPE_ORDER["chapter"]:
-        files.extend(sorted(outline.glob("细纲_第*.md")))
-        files.extend(sorted((outline / "场景").glob("CH-*-SC-*.md")))
+    files = [root / "大纲" / "工作状态.md", *outline_files_for_scope(root, scope)]
     tracker_names = (
         "大纲状态.md",
         "世界状态变化.md",
@@ -169,7 +280,11 @@ def validate(
     architecture_path = outline / "01_故事架构.md"
     world_reference_path = outline / "世界观引用.md"
     world_dir = root / "设定" / "世界观"
-    local_world_files = sorted(world_dir.glob("*.md")) if world_dir.exists() else []
+    local_world_files = sorted(
+        path for path in world_dir.rglob("*.md")
+        if not any(part.startswith(".") or part in {"版本", "备份", "backup", "backups", "__pycache__"}
+                   for part in path.relative_to(world_dir).parts[:-1])
+    ) if world_dir.exists() else []
     world_input_exists = bool(local_world_files)
 
     if world_input_exists and not world_reference_path.exists():
@@ -206,22 +321,6 @@ def validate(
             root,
         )
         if world_input_exists:
-            known_world_ids: set[str] = set()
-            for path in local_world_files:
-                text = read_text(path, issues, root)
-                known_world_ids.update(match.group(0).upper() for match in WORLD_ID_RE.finditer(text))
-            for match in WORLD_ID_RE.finditer(world_reference_text):
-                object_id = match.group(0).upper()
-                if object_id not in known_world_ids:
-                    issues.append(
-                        Issue(
-                            "error" if strict else "warning",
-                            "invalid_world_reference",
-                            relative(world_reference_path, root),
-                            f"世界观引用未在本地来源中找到：{object_id}",
-                        )
-                    )
-
             interface = world_dir / "15_大纲接口.md"
             if interface.exists():
                 interface_data = fields(read_text(interface, issues, root))
@@ -239,6 +338,8 @@ def validate(
                             f"引用版本 {pinned_version} 与当前接口版本 {current_version} 不一致。",
                         )
                     )
+
+    check_world_references(root, scope, strict, local_world_files, issues)
 
     if not dna_path.exists():
         issues.append(Issue("error", "missing_file", "大纲/00_故事DNA.md", "缺少 L0 Story DNA。"))
@@ -312,9 +413,9 @@ def validate(
                         )
                     )
 
-    arc_files = sorted((outline / "故事弧").glob("ARC-*.md"))
-    sequence_files = sorted((outline / "剧情段").glob("SEQ-*.md"))
-    chapter_files = sorted(outline.glob("细纲_第*.md"))
+    arc_files = sorted((outline / "故事弧").glob("ARC-*.md")) if SCOPE_ORDER[scope] >= SCOPE_ORDER["arc"] else []
+    sequence_files = sorted((outline / "剧情段").glob("SEQ-*.md")) if SCOPE_ORDER[scope] >= SCOPE_ORDER["sequence"] else []
+    chapter_files = sorted(outline.glob("细纲_第*.md")) if SCOPE_ORDER[scope] >= SCOPE_ORDER["chapter"] else []
 
     if SCOPE_ORDER[scope] >= SCOPE_ORDER["arc"] and not arc_files:
         issues.append(Issue("error", "missing_layer", "大纲/故事弧", "目标范围要求至少一个 ARC 文件。"))
@@ -415,13 +516,7 @@ def validate(
                 "POV",
                 "进入状态",
                 "人物目标",
-                "阻碍",
-                "冲突",
                 "新信息",
-                "决策",
-                "代价",
-                "后果",
-                "状态变化",
                 "未闭环",
                 "伏笔回收/新增",
                 "章尾问题",
@@ -430,6 +525,7 @@ def validate(
             root,
             level=hierarchy_level,
         )
+        check_chapter_equivalents(path, data, issues, root, hierarchy_level)
         add_missing_fields(
             path,
             text,
