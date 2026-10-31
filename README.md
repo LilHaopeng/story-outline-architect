@@ -101,6 +101,8 @@ python -B tests/test_outline_skill.py --report .qa/validation.json
 
 ## 配套项目与许可证
 
+**配套创作流程**：世界观架构师负责世界规则与设定，本项目负责故事结构与章纲，[正文写作 · Story Prose Writer](https://github.com/LilHaopeng/story-prose-writer) 根据已有世界观和大纲进行文风校准、正文撰写与连续性审校。三个技能可独立使用，也可按项目需要衔接。
+
 [世界观架构师](https://github.com/LilHaopeng/story-world-architect) 提供世界构建与大纲接口交接。本项目保留同系列 AI 生成海报，不发布海报提示词。
 
 本仓库使用 [MIT License](LICENSE)，Copyright © 2026 LilHaopeng。外部软件与字体保留各自许可证。本项目不是 OpenAI 官方产品。
