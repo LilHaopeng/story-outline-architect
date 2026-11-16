@@ -1,0 +1,1 @@
+-r skills/story-outline-architect/requirements.txt

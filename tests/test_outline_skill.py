@@ -214,11 +214,29 @@ class OutlineWorkflowTests(unittest.TestCase):
     def test_scripts_parse_and_reference_links_resolve(self) -> None:
         for script in (SKILL / "scripts").glob("*.py"):
             ast.parse(script.read_text(encoding="utf-8"), filename=str(script))
-        for source in [SKILL / "SKILL.md", *(SKILL / "references").glob("*.md")]:
+        repo_root = SKILL.parents[1]
+        for source in [repo_root / "README.md", repo_root / "README_EN.md", SKILL / "SKILL.md", *(SKILL / "references").glob("*.md")]:
+            if not source.is_file():
+                continue
             for target in re.findall(r"\[[^\]]+\]\(([^\s)]+)\)", source.read_text(encoding="utf-8")):
                 if "://" in target or target.startswith("#"):
                     continue
-                self.assertTrue((source.parent / target.split("#", 1)[0]).is_file(), f"{source}: {target}")
+                self.assertTrue((source.parent / target.split("#", 1)[0]).exists(), f"{source}: {target}")
+
+    def test_language_flag_and_outline_docx_builder(self) -> None:
+        lang_root = self.root / "en_proj"
+        init_res = call("init_outline_project.py", "--root", lang_root, "--title", "Harbour Tides", "--mode", "compact", "--lang", "English")
+        self.assertEqual(init_res.returncode, 0, init_res.stderr)
+        state_text = (lang_root / "大纲/工作状态.md").read_text(encoding="utf-8")
+        self.assertIn("写作语言：English", state_text)
+        try:
+            import docx  # noqa: F401
+        except ImportError:
+            self.skipTest("Optional python-docx is not installed.")
+        out_docx = lang_root / "交付/Harbour_Tides_Outline.docx"
+        build_res = call("build_outline_docx.py", "--root", lang_root, "--out", out_docx, "--lang", "en")
+        self.assertEqual(build_res.returncode, 0, build_res.stderr)
+        self.assertTrue(out_docx.is_file())
 
 
 class ReferenceAndChapterContractTests(unittest.TestCase):
@@ -482,7 +500,7 @@ def main() -> int:
     suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     report = {
-        "skill": str(SKILL), "skill_version": "1.3.2", "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "skill": str(SKILL), "skill_version": "1.4.0", "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "python": sys.version.split()[0], "tests_run": result.testsRun,
         "failures": len(result.failures), "errors": len(result.errors),
         "status": "passed" if result.wasSuccessful() else "failed",

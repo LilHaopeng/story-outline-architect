@@ -15,11 +15,12 @@ def safe_root(raw: str) -> Path:
     return root
 
 
-def templates(title: str, mode: str) -> dict[str, str]:
+def templates(title: str, mode: str, lang: str = "简体中文") -> dict[str, str]:
     base: dict[str, str] = {
         "大纲/工作状态.md": f"""# 大纲工作状态
 
 - 项目名：{title}
+- 写作语言：{lang}
 - 工作模式：create
 - 深度：{mode}
 - 当前最高完成层：未开始
@@ -232,6 +233,7 @@ def world_input_templates(root: Path) -> dict[str, str]:
 - 锁定硬规则：[待确认]
 - 选用结构冲突：[待确认]
 - 选用剧情种子：[待确认]
+- 语言与日常肌理参考：见世界观接口文件（可选）
 - 允许调整项：[待确认]
 - 禁止假设：[待确认]
 - 待确认：[待确认]
@@ -262,6 +264,11 @@ def main() -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="Show actions without writing"
     )
+    parser.add_argument(
+        "--lang",
+        default="简体中文",
+        help="Default planning language recorded in workspace state (default: 简体中文)",
+    )
     args = parser.parse_args()
 
     try:
@@ -269,7 +276,7 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
 
-    files = templates(args.title.strip() or "未命名小说", args.mode)
+    files = templates(args.title.strip() or "未命名小说", args.mode, args.lang.strip() or "简体中文")
     files.update(world_input_templates(root))
     directories = {
         root / "大纲" / "故事弧",
