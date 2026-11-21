@@ -4,7 +4,7 @@
 
 [简体中文](README.md) | **English**
 
-An agent skill for designing, auditing, revising, version-locking, and compiling fiction outlines—from initial creative spark and Story DNA down to multi-track Story Architecture, Arcs, Sequences, concrete Chapter Outlines, and on-demand Scene Blueprints. Current version: **v1.4.0**.
+An agent skill for designing, auditing, revising, version-locking, and compiling fiction outlines—from initial creative spark and Story DNA down to multi-track Story Architecture, Arcs, Sequences, concrete Chapter Outlines, and on-demand Scene Blueprints. Current version: **v1.4.1**.
 
 Core dramatic unit: `Goal → Conflict → Choice → Cost → Consequence → New State`.
 
@@ -32,11 +32,16 @@ By default, the skill plans and writes in **Simplified Chinese (`简体中文`)*
 
 ## Companion Studio Pipeline
 
-Use standalone or connect all three skills into a unified novel studio workflow:
+Use standalone or connect with the full six-skill fiction & AI-drama studio ecosystem:
 
-1. [Story World Architect](https://github.com/LilHaopeng/story-world-architect): Builds causally grounded worlds, social institutions, and everyday vernacular handoffs.
-2. **Story Outline Architect**: Turns world pressures and creative intent into layered, causally verified story outlines.
-3. [Story Prose Writer](https://github.com/LilHaopeng/story-prose-writer): Transforms world canon and concrete chapter outlines into natural, well-paced chapters.
+- **Long-Form & Literary Novel Suite**
+  1. [Story World Architect](https://github.com/LilHaopeng/story-world-architect): Builds causally grounded worlds, social institutions, and everyday vernacular handoffs.
+  2. **Story Outline Architect**: Turns world pressures and creative intent into layered, causally verified story outlines.
+  3. [Story Prose Writer](https://github.com/LilHaopeng/story-prose-writer): Transforms world canon and concrete chapter outlines into natural, well-paced chapters.
+- **Market Radar, High-Concept Short Fiction & AI Drama Suite**
+  4. [Webnovel Market Radar](https://github.com/LilHaopeng/webnovel-market-radar): Tri-track market ranking scanner and topic-brief generator across short webnovels, serialized long webnovels, and AI short dramas / comic dramas.
+  5. [Webnovel Short Studio](https://github.com/LilHaopeng/webnovel-short-studio): High-concept short webnovel & micro-drama fiction studio (under 50k words) with mobile-first pacing.
+  6. [AI Drama Script Studio](https://github.com/LilHaopeng/ai-drama-script-studio): Original & adapted AI short drama (MiniMax-H3), 2D/3D comic drama, and comedy short drama scriptwriting studio.
 
 ## Installation
 
